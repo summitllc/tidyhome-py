@@ -1,18 +1,14 @@
 ####################################
-#AUTHOR: Summit Consulting LLC
-#PURPOSE: To circumnavigate the HMDA API for entry-level data scientists
-#INPUT: A list of variables that I want from the HMDA Data
-#OUTPUT: a dataframe with the variables asked for by user
-#NOTES:
-#    https://cfpb.github.io/hmda-platform/#hmda-api-documentation
-#    https://requests.readthedocs.io/en/master/
-#    https://packaging.python.org/tutorials/packaging-projects/
+# AUTHOR: Summit Consulting LLC
+# PURPOSE: To circumnavigate the HMDA API for entry-level data scientists
+# NOTES:
+#     https://cfpb.github.io/hmda-platform/#hmda-api-documentation
 ####################################
 
+from typing import Dict, Iterable, List, Optional, Union
+from enum import Enum
 import pandas as pd
 import requests
-from typing import Union, Iterable, List
-from enum import Enum
 from check_dictionaries import state_dictionary, race_dictionary
 
 # Limit what gets imported via the 'import *' statement
@@ -23,7 +19,6 @@ __all__ = [
 ]
 
 class Race(Enum):
-    BLANK = 999
     Asian = 0
     Pacific_Islander = 1
     Free_Form = 2
@@ -36,7 +31,6 @@ class Race(Enum):
     
 # Values correspond with actions recognized by HDMA API
 class Action(Enum):
-    BLANK = 999
     Originated = 1
     Approved = 2
     Denied = 3
@@ -48,7 +42,7 @@ class Action(Enum):
 
 ### (Main functions) ###
 
-def get_aggregations(years: str, states: Union[List[str], str], actions: Union[List[Enum], Enum]= Action.BLANK, races: Union[List[Enum], Enum]= Race.BLANK) -> pd.DataFrame:
+def get_aggregations(years: str, states: Union[List[str], str], actions: Union[List[Enum], Enum]= None, races: Union[List[Enum], Enum] = None) -> pd.DataFrame:
     '''
     Send request to HDMA API to get aggregations.
         
@@ -75,10 +69,10 @@ def get_aggregations(years: str, states: Union[List[str], str], actions: Union[L
     Raises:
         Exception: If HTTP request to API contains bad syntax or cannot be fulfilled.
     '''
-    if actions == Action.BLANK and races == Race.BLANK:
+    if actions == None and races == None:
         raise Exception("This function requires at least three parameters to make a proper request. Please add one then try again.")
     else:
-        param_dict= api_parameter_dict(years, states, actions, races)
+        param_dict= get_params(years, states, actions, races)
 
         print('pulling aggregations data .....')
         urlendpoint = "https://ffiec.cfpb.gov/v2/data-browser-api/view/aggregations"
@@ -94,7 +88,7 @@ def get_aggregations(years: str, states: Union[List[str], str], actions: Union[L
         print('Aggregation DataFrame successfully created!')
         return aggregations_df
 
-def get_institutions(years: str, states: Union[List[str], str], actions: Union[List[Enum], Enum]= Action.BLANK, races: Union[List[Enum], Enum]= Race.BLANK) -> pd.DataFrame:
+def get_institutions(years: str, states: Union[List[str], str], actions: Union[List[Enum], Enum]= None, races: Union[List[Enum], Enum]= None) -> pd.DataFrame:
     '''
     Get HMDA data by filing institutions
         
@@ -121,7 +115,7 @@ def get_institutions(years: str, states: Union[List[str], str], actions: Union[L
     Raises:
         Exception: If HTTP request to API contains bad syntax or cannot be fulfilled.
     '''
-    param_dict = api_parameter_dict(years, states, actions, races)
+    param_dict = get_params(years, states, actions, races)
 
     print('pulling data on filing institutions .....')
     urlendpoint = "https://ffiec.cfpb.gov/v2/data-browser-api/view/filers"
@@ -137,26 +131,26 @@ def get_institutions(years: str, states: Union[List[str], str], actions: Union[L
     print('Institution DataFrame successfully created!')
     return filers_df
 
-def get_loans(years: str, states: Union[List[str], str], actions: Union[List[Enum], Enum]= Action.BLANK, races: Union[List[Enum], Enum]= Race.BLANK) -> pd.DataFrame:
+def get_loans(years: int, 
+              states: Union[List[str], str], 
+              actions: Optional[Union[Action, List[Action]]] = None, 
+              races: Optional[Union[Race, List[Race]]] = None) -> pd.DataFrame:
     '''
     Get HMDA individual loan level data.
         
     Args:
-        years (Str): year in the range 2018-2020. (Only one year should be passed for each call, since the HDMA API can only show data for one year per request.)\ 
-            ['2018', '2019', '2020']
+        years (int): year in the range 2018-2020. (Only one year should be 
+            passed for each call, since the HDMA API can only show data for one 
+            year per request.)
 
-        states (List | Str): valid Two-Letter State Abbreviations for US state or territory.
-            ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA',\ 
-            'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX',\ 
-            'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'AS', 'GU', 'MP', 'PR', 'VI', 'UM', 'FM', 'MH', 'PW']
+        states (str | List[str]): valid Two-Letter State Abbreviations for US 
+            state or territory.
 
-        actions (List | Enum): action(s) taken by population information is being requested for. A valid parameter should be selected from the following options:\ 
-            [Action.Originated, Action.Approved, Action.Denied, Action.Withdrawn, Action.Incomplete, Action.Purchased,\ 
-            Action.Predenied, Action.Preapproved]
+        actions (Action | List[Action]): action(s) taken by population 
+            information is being requested for.
 
-        races (List | Enum): race(s) of population information is being requested for. A valid parameter should be selected from the following options:\ 
-            [Race.Asian, Race.Pacific_Islander, Race.Free_Form, Race.Unavailable, Race.Native_American, Race.Black, Race.Mixed_Minority,\ 
-            Race.White, Race.Joint]
+        races (Race | List[Race]): race(s) of population information is being 
+            requested for.
     
     Returns:
         pandas.DataFrame
@@ -164,27 +158,26 @@ def get_loans(years: str, states: Union[List[str], str], actions: Union[List[Enu
     Raises:
         Exception: If HTTP request to API contains bad syntax or cannot be fulfilled.
     '''
-    if actions == Action.BLANK and races == Race.BLANK:
-        raise Exception("This function requires at least three parameters to make a proper request. Please add one then try again.")
-    else:
-        param_dict = api_parameter_dict(years, states, actions, races)
+    if not actions and not races:
+        raise Exception("You must provide an argument to at least one of `actions` or `races`.")
+    
+    endpoint = "https://ffiec.cfpb.gov/v2/data-browser-api/view/csv"
+    params = get_params(years, states, actions, races)
+    response = requests.get(endpoint, params=params)
 
-        print('pulling loan level data .....')
-        urlendpoint = "https://ffiec.cfpb.gov/v2/data-browser-api/view/csv"
-        r2 = requests.get(urlendpoint, params= param_dict)
-        url = r2.url
-        status = r2.status_code
-        if status == 200:
-            pass
-        else:
-            raise Exception(r2.text)
-        loans_df = pd.read_csv(url, low_memory=False)
-        print('Loan DataFrame successfully created!')
-        return loans_df
+    if response.status_code != 200:
+        raise Exception(response.text)
+
+    data = pd.read_csv(response.url, low_memory=False)
+    return data
+
 
 ### (Helper function for Main functions) Create API parameter dictionary ###
 
-def api_parameter_dict(years: str, states: str, actions: str, races: str) -> dict:
+def get_params(years: Optional[Union[int, List[int]]],
+               states: Optional[Union[str, List[str]]],
+               actions: Optional[Union[Action, List[Action]]],
+               races: Optional[Union[Race, List[Race]]]) -> Dict[str, str]:
     '''
     Creates parameter dictionary used in requests to HDMA API.
     
@@ -195,24 +188,22 @@ def api_parameter_dict(years: str, states: str, actions: str, races: str) -> dic
     Returns:
         Dictionary
     '''
-    #Initialize dict with key-value pairs mandatory for all API request endpoints
-    dictionary = {
-        'years' : translate_years(years),
-        'states' : translate_states(states)
-    }
+    params = {}
 
-    #Add additional dict items, as necessary
-    if actions != Action.BLANK:
-        dictionary['actions_taken'] = translate_actions(actions)
-
-    if races != Race.BLANK:
-        dictionary['races'] = translate_races(races)
+    if years:
+        params['years'] = translate_years(years)
+    if states:
+        params['states'] = translate_states(states)
+    if actions:
+        params['actions_taken'] = translate_actions(actions)
+    if races:
+        params['races'] = translate_races(races)
     
-    return dictionary
+    return params
 
 ### (Helper functions for API parameter function) Translate user input to valid string ###
 
-def translate_years(years: Union[List[Union[str, int]], str, int]) -> str:
+def translate_years(years: Union[int, List[int]]) -> str:
     '''
     Checks user input and translates close matches into acceptable string format for API requests.
     
@@ -224,17 +215,9 @@ def translate_years(years: Union[List[Union[str, int]], str, int]) -> str:
     Returns:
         String
     '''
-    if type(years) != str:
-        years = conv_to_str(years)
-        if len(years) != 4:
-            raise ValueError("Please ensure that your input is one 4-digit year. If you must receive data for multiple years, please make a separate request.")
-        else:
-            return years.replace(' ', '')
-    else:
-        if len(years) != 4:
-            raise ValueError("Please ensure that your input is one 4-digit year. If you must receive data for multiple years, please make a separate request.")
-        else:
-            return years.replace(' ', '') 
+    if isinstance(years, int):
+        return str(years)
+    return ','.join([str(year) for year in years])
 
 def translate_states(states: Union[List[str], str]) -> str:
     '''
@@ -339,7 +322,7 @@ def conv_to_str(integers: Union[List[int], int]) -> str:
     else:
         return
 
-def check_abbreviation(states: Union[List[str], str]) -> None:
+def check_abbreviation(states: Union[str, List[str]]) -> None:
     '''
     Checks to make sure input one of the Two-Letter State Abbreviations listed in\ 
     the 'state_dictionary' variable.
@@ -413,9 +396,9 @@ if __name__ == '__main__':
     print(x1, type(x1))
 
 
-    y1 = get_aggregations(['2019'], 'tx,md',races=Race.Mixed_Minority)
+    y1 = get_aggregations([2019], 'tx,md',races=Race.Mixed_Minority)
     print(y1)
-    y2 = get_loans('2019', 'tx', [Action.Incomplete, Action.Predenied], Race.Pacific_Islander)
+    y2 = get_loans(2019, 'tx', [Action.Incomplete, Action.Predenied], Race.Pacific_Islander)
     print(y2)
     y3 = get_institutions(2020, ['ma', 'nj', 'tx'])
     print(y3)
