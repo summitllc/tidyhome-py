@@ -1,15 +1,22 @@
-"""This module assists with the process of retrieving data from the CFPB'S HDMA API.
+"""a package that simplifies the process of retrieving HMDA data from the HMDA Platform API
 
-Tidyhome provides users with functions that make a single request to the HDMA API and place the 
-requested data in a pandas DataFrame. Two Enum classes ('Races' and 'Actions') have been created to 
-help users more easily formulate valid API requests. When using a tidyhome function, the 'races' and 
-'actions' parameters both expect an argument from their respective Enum class.
+Tidyhome provides access to data on US home mortgages from CFPB's Home Mortgage Disclosure Act (HMDA)
+Platform API via several functions. These functions make the proper API request (given your desired
+parameters) and store the requested data in a pandas DataFrame. Currently, you can make requests to 
+access data on individual loans, summaries of loans, and lending institutions.
 
     Usage examples:
 
-    tidyhome.get_institutions(2020, ['dc', 'md', 'va'])
-    tidyhome.get_loans(2019, 'dc', [Action.INCOMPLETE, Action.PREAPPROVED], [Race.BLACK, Race.WHITE])
-    tidyhome.get_aggregations(2018, 'dc' , races=Race.UNAVAILABLE)
+    tidyhome.get_institutions(2018, ["DC", "Md", "va"])
+        -returns a DataFrame containing data on lending institutions that filed HMDA data in 2018 in 
+         DC, Maryland, and Virginia.
+    tidyhome.get_loans(2019, "dc", [Action.INCOMPLETE, Action.PREAPPROVED], [Race.BLACK, Race.WHITE])
+        -returns a DataFrame containing HMDA data on all individual loans in 2019 in DC where the file 
+         was closed for incompleteness or the loan was preapproved, and the reported races of 
+         applicants/borrowers were black or white.
+    tidyhome.get_aggregations(2020, "DC" , races=Race.UNAVAILABLE)
+        -returns a DataFrame containing HMDA data on the total quantity and sum of all loans reported 
+         in 2020 in DC where the reported race of applicants/borrowers was unavailable.
 """
 ####################################
 # AUTHOR: Summit Consulting LLC
@@ -22,19 +29,20 @@ from typing import Dict, Iterable, List, Optional, Union
 from enum import Enum
 import pandas as pd
 import requests
-from check_dictionaries import state_set, race_dictionary
+import lookup
 
 # Limit what gets imported via the 'import *' statement
 __all__ = [
-    'Race',
-    'Action',
-    'get_aggregations',
-    'get_institutions',
-    'get_loans'
+    "Race",
+    "Action",
+    "get_aggregations",
+    "get_institutions",
+    "get_loans"
 ]
 
 class Race(Enum):
-    """Enum class to simplify inputting valid 'races' parameter"""
+    """Races recorded as part of a home mortgage application or loan. You can use these to get data
+    for only the races you specify."""
     ASIAN = 0
     PACIFIC_ISLANDER = 1
     FREE_FORM = 2
@@ -45,9 +53,10 @@ class Race(Enum):
     WHITE = 7
     JOINT = 8
 
-# Values correspond with actions recognized by HDMA API
+# Values correspond with their proper 'Action Codes', as specified by CFPB
 class Action(Enum):
-    """Enum class to simplify inputting valid 'actions_taken' parameter"""
+    """Actions taken by lending institutions on the filed application or loan. You can use these
+    to get data for only the actions you specify."""
     ORIGINATED = 1
     APPROVED = 2
     DENIED = 3
@@ -59,119 +68,121 @@ class Action(Enum):
 
 ### (Main functions) ###
 
-def get_aggregations(years: int,
+def get_aggregations(year: int,
                      states: Union[str, List[str]],
                      actions: Optional[Union[Action, List[Action]]] = None,
                      races: Optional[Union[Race, List[Race]]] = None) -> pd.DataFrame:
-    '''
-    Get HDMA aggregate loan level data.
+    """
+    Get HMDA aggregate data (ie. total quantity and sum) of all loans reported.
 
     Args:
-        years (int): year in the range 2018-2020 (Only one year should be
-            passed for each call, since the HDMA API can only show data for one
-            year per request).
+        year (int): 
+            Year that the HMDA data was filed in. Must be a *single* year from 2018 onwards 
+            (currently the API only shows data for one year per request).
 
-        states (str | List[str]): valid Two-Letter State Abbreviations for US
-            state or territory.
+        states (str | List[str]): 
+            State that the HMDA data was filed in. Must be a valid Two-Letter State Abbreviation
+            for a US state or territory.
 
-        actions (Action | List[Action]): action(s) taken by population
-            information is being requested for.
+        actions (Action | List[Action]):
+            Action taken on the application or loan by the lending institution that filed the HMDA
+            data.
 
-        races (Race | List[Race]): race(s) of population information is being
-            requested for.
+        races (Race | List[Race]):
+            Reported race of the applicant or borrower in filed HMDA data.
 
     Returns:
         pandas.DataFrame
 
     Raises:
         Exception: If HTTP request to API contains bad syntax or cannot be fulfilled.
-    '''
+    """
     if not actions and not races:
-        raise Exception("You must provide an argument to at least one of `actions` or `races`.")
+        raise Exception("You must provide an argument to at least one of 'actions' or 'races'.")
 
     endpoint = "https://ffiec.cfpb.gov/v2/data-browser-api/view/aggregations"
-    params= get_params(years, states, actions, races)
+    params= get_params(year, states, actions, races)
     response = requests.get(endpoint, params=params)
 
     if response.status_code != 200:
         raise Exception(response.text)
 
-    response_json = response.json()
-    parsed_json = response_json["aggregations"]
-    data = pd.DataFrame(parsed_json)
-    return data
+    data = response.json()
+    return pd.DataFrame(data["aggregations"])
 
-def get_institutions(years: int,
+def get_institutions(year: int,
                      states: Union[str, List[str]],
                      actions: Optional[Union[Action, List[Action]]] = None,
                      races: Optional[Union[Race, List[Race]]] = None) -> pd.DataFrame:
-    '''
-    Get HMDA data by filing institutions.
+    """
+    Get all lending institutions that reported HMDA data.
 
     Args:
-        years (int): year in the range 2018-2020 (Only one year should be
-            passed for each call, since the HDMA API can only show data for one
-            year per request).
+        year (int): 
+            Year that the HMDA data was filed in. Must be a *single* year from 2018 onwards 
+            (currently the API only shows data for one year per request).
 
-        states (str | List[str]): valid Two-Letter State Abbreviations for US
-            state or territory.
+        states (str | List[str]): 
+            State that the HMDA data was filed in. Must be a valid Two-Letter State Abbreviation
+            for a US state or territory.
 
-        actions (Action | List[Action]): action(s) taken by population
-            information is being requested for.
+        actions (Action | List[Action]):
+            Action taken on the application or loan by the lending institution that filed the HMDA
+            data.
 
-        races (Race | List[Race]): race(s) of population information is being
-            requested for.
+        races (Race | List[Race]):
+            Reported race of the applicant or borrower in filed HMDA data.
 
     Returns:
         pandas.DataFrame
 
     Raises:
         Exception: If HTTP request to API contains bad syntax or cannot be fulfilled.
-    '''
+    """
     endpoint = "https://ffiec.cfpb.gov/v2/data-browser-api/view/filers"
-    params = get_params(years, states, actions, races)
+    params = get_params(year, states, actions, races)
     response = requests.get(endpoint, params=params)
 
     if response.status_code != 200:
         raise Exception(response.text)
 
-    response_json = response.json()
-    parsed_json = response_json["institutions"]
-    data = pd.DataFrame(parsed_json)
-    return data
+    data = response.json()
+    return pd.DataFrame(data["institutions"])
 
-def get_loans(years: int,
+def get_loans(year: int,
               states: Union[str, List[str]],
               actions: Optional[Union[Action, List[Action]]] = None,
               races: Optional[Union[Race, List[Race]]] = None) -> pd.DataFrame:
-    '''
-    Get HMDA individual loan level data.
+    """
+    Get raw HMDA data on all individual loans reported.
 
     Args:
-        years (int): year in the range 2018-2020 (Only one year should be
-            passed for each call, since the HDMA API can only show data for one
-            year per request).
+        year (int): 
+            Year that the HMDA data was filed in. Must be a *single* year from 2018 onwards 
+            (currently the API only shows data for one year per request).
 
-        states (str | List[str]): valid Two-Letter State Abbreviations for US
-            state or territory.
+        states (str | List[str]): 
+            State that the HMDA data was filed in. Must be a valid Two-Letter State Abbreviation
+            for a US state or territory.
 
-        actions (Action | List[Action]): action(s) taken by population
-            information is being requested for.
+        actions (Action | List[Action]):
+            Action taken on the application or loan by the lending institution that filed the HMDA
+            data.
 
-        races (Race | List[Race]): race(s) of population information is being
-            requested for.
+        races (Race | List[Race]):
+            Reported race of the applicant or borrower in filed HMDA data.
 
     Returns:
         pandas.DataFrame
 
     Raises:
         Exception: If HTTP request to API contains bad syntax or cannot be fulfilled.
-    '''
+    """
     if not actions and not races:
-        raise Exception("You must provide an argument to at least one of `actions` or `races`.")
+        raise Exception("You must provide an argument to at least one of 'actions' or 'races'.")
 
     endpoint = "https://ffiec.cfpb.gov/v2/data-browser-api/view/csv"
-    params = get_params(years, states, actions, races)
+    params = get_params(year, states, actions, races)
     response = requests.get(endpoint, params=params)
 
     if response.status_code != 200:
@@ -182,12 +193,12 @@ def get_loans(years: int,
 
 ### (Helper function for Main functions) Create API parameter dictionary ###
 
-def get_params(years: Optional[Union[int, List[int]]],
+def get_params(year: Optional[Union[int, List[int]]],
                states: Optional[Union[str, List[str]]],
                actions: Optional[Union[Action, List[Action]]],
                races: Optional[Union[Race, List[Race]]]) -> Dict[str, str]:
-    '''
-    Creates parameter dictionary used in requests to HDMA API.
+    """
+    Creates parameter dictionary used in requests to HMDA API.
 
     Args:
         All args from parent function (get_params) are passed into corresponding "translate"
@@ -195,24 +206,24 @@ def get_params(years: Optional[Union[int, List[int]]],
 
     Returns:
         Dictionary
-    '''
+    """
     params = {}
 
-    if years:
-        params['years'] = translate_years(years)
+    if year:
+        params["years"] = translate_years(year)
     if states:
-        params['states'] = translate_states(states)
+        params["states"] = translate_states(states)
     if actions:
-        params['actions_taken'] = translate_actions(actions)
+        params["actions_taken"] = translate_actions(actions)
     if races:
-        params['races'] = translate_races(races)
+        params["races"] = translate_races(races)
 
     return params
 
-### (Helper functions for API parameter function) Translate user input to valid string ###
+### Helper functions (for 'get_params' function) ###
 
 def translate_years(years: Union[int, List[int]]) -> str:
-    '''
+    """
     Checks user input and translates close matches into acceptable string format for API requests.
 
     Args:
@@ -220,22 +231,21 @@ def translate_years(years: Union[int, List[int]]) -> str:
 
     Returns:
         String
-    '''
+    """
     if isinstance(years, int):
         return str(years)
     return ','.join([str(year) for year in years])
 
 def translate_states(states: Union[str, List[str]]) -> str:
-    '''
+    """
     Checks user input and translates close matches into acceptable string format for API requests.
 
     Args:
-        states(str | List[str]): input(s) to be checked against the 'state_set' variable (a set 
-            containing all valid state arguments).
+        states(str | List[str]): a state or list of states to be validated.
 
     Returns:
         String
-    '''
+    """
     if type(states) == str:
         check_abbreviation(states)
         return states.replace(' ', '')
@@ -247,8 +257,8 @@ def translate_states(states: Union[str, List[str]]) -> str:
         raise TypeError(f"The input '{states}' is not a valid input.")
 
 def translate_actions(actions: Union[Action, List[Action]]) -> str:
-    '''
-    Transform user input (selection from enum class) into acceptable string format for API requests.
+    """
+    Transforms user input (selection from enum class) into acceptable string format for API requests.
 
     Args:
         actions(Action | List[Action]): Enum or list of enums from 'Action' enum class.
@@ -258,17 +268,17 @@ def translate_actions(actions: Union[Action, List[Action]]) -> str:
     
     Raises:
         TypeError: If input is not of type 'Action' or 'List'.
-    '''
+    """
     if type(actions) == Action:
-        return convert_single_act(actions)
+        return translate_actions_single(actions)
     elif type(actions) == list:
-        return convert_multiple_acts(actions)
+        return translate_actions_multiple(actions)
     else:
         raise TypeError(f"The input '{actions}' is not a valid input. Please input an option from the"
                         " 'Action' class or a List containing options from the 'Action' class.")
 
 def translate_races(races: Union[Race, List[Race]]) -> str:
-    '''
+    """
     Transform user input (selection from enum class) into acceptable string format for API requests.
 
     Args:
@@ -279,18 +289,19 @@ def translate_races(races: Union[Race, List[Race]]) -> str:
     
     Raises:
         TypeError: If input is not of type 'Race' or 'List'.
-    '''
+    """
     if type(races) == Race:
-        return convert_single_race(races)
+        return translate_races_single(races)
     elif type(races) == list:
-        return convert_multiple_races(races)
+        return translate_races_multiple(races)
     else:
         raise TypeError(f"The input '{races}' is not a valid input. Please input an option from the"
                         " 'Race' class or a List containing options from the 'Race' class.")
 
 ### Other helper functions ###
-def convert_single_act(action: Action) -> str:
-    '''
+
+def translate_actions_single(action: Action) -> str:
+    """
     Converts a single 'Action' enum to a string if it is valid.
 
     Args:
@@ -300,14 +311,14 @@ def convert_single_act(action: Action) -> str:
         String
 
     Raises:
-        ValueError: If input is not a valid 'Action' enum.
-    '''
-    if action not in Action:
-        raise ValueError(f"The input '{action}' is not a valid action.")
+        TypeError: If input is not an Action.
+    """
+    if not isinstance(action, Action):
+        raise TypeError(f"'{action}' is not an Action.")
     return str(action.value)
 
-def convert_multiple_acts(actions: List[Action]) -> str:
-    '''
+def translate_actions_multiple(actions: List[Action]) -> str:
+    """
     Converts multiple 'Action' enums to a string if they are valid.
 
     Args:
@@ -317,19 +328,19 @@ def convert_multiple_acts(actions: List[Action]) -> str:
         String
         
     Raises:
-        ValueError: If input is not a valid 'Action' enum.
-    '''
+        TypeError: If input is not an Action.
+    """
     act_text = []
-    for i, act_input in enumerate(actions):
-        if type(act_input) != Action or act_input not in Action:
-            raise ValueError(f"The input '{act_input}' at index {i} is not a valid action.")
+    for action in actions:
+        if not isinstance(action, Action):
+            raise TypeError(f"'{action}' is not an Action.")
         else:
-            act_text.append(str(act_input.value))
+            act_text.append(str(action.value))
     return ','.join(act_text)
 
-def convert_single_race(race: Race) -> str:
-    '''
-    Converts a single 'Race' enum to a string (via accessing 'race_dictionary', using the enum's 
+def translate_races_single(race: Race) -> str:
+    """
+    Converts a single 'Race' enum to a string (via accessing 'lookup.races', using the enum's 
     value as the dict key) if it is valid.
 
     Args:
@@ -339,15 +350,15 @@ def convert_single_race(race: Race) -> str:
         String
     
     Raises:
-        ValueError: If input is not a valid 'Race' enum.
-    '''
-    if race not in Race:
-        raise ValueError(f"The input '{race}' is not a valid race.")
-    return race_dictionary[race.value]
+        TypeError: If input is not a Race.
+    """
+    if not isinstance(race, Race):
+        raise TypeError(f"'{race}' is not a Race.")
+    return lookup.races[race.value]
 
-def convert_multiple_races(races: List[Race]) -> str:
-    '''
-    Converts multiple 'Race' enums to a string (via accessing 'race_dictionary', using the enum's 
+def translate_races_multiple(races: List[Race]) -> str:
+    """
+    Converts multiple 'Race' enums to a string (via accessing 'lookup.races', using the enum's 
     value as the dict key) if they are valid.
 
     Args:
@@ -357,19 +368,19 @@ def convert_multiple_races(races: List[Race]) -> str:
         String
     
     Raises:
-        ValueError: If input is not a valid 'Race' enum.
-    '''
+        TypeError: If input is not a Race.
+    """
     race_text = []
-    for i, race_input in enumerate(races):
-        if type(race_input) != Race or race_input not in Race:
-            raise ValueError(f"The input '{race_input}' at index {i} is not a valid race.")
+    for race in races:
+        if not isinstance(race, Race):
+            raise TypeError(f"'{race}' is not a Race.")
         else:
-            race_text.append(race_dictionary[race_input.value])
+            race_text.append(lookup.races[race.value])
     return ','.join(race_text)
 
 def check_abbreviation(states: Union[str, List[str]]) -> None:
-    '''
-    Checks to make sure input is one of the Two-Letter State Abbreviations listed in 'state_set'.
+    """
+    Checks to make sure input is one of the Two-Letter State Abbreviations listed in 'lookup.states'.
 
     Args:
         states(str | List[str]): A single or list of single state abbreviation(s).
@@ -378,48 +389,21 @@ def check_abbreviation(states: Union[str, List[str]]) -> None:
         None
 
     Raises:
-        ValueError: If input is not found in 'state_set'.
-    '''
+        ValueError: If input is not found in 'lookup.states'.
+    """
     if type(states) == str:
         states = states.replace(' ', '')
-        if states.upper() not in state_set:
+        if states.upper() not in lookup.states:
             raise ValueError(
-                f'The input \'{states}\' is not a valid state input. '\
-                'Please ensure your input is a valid two-letter state abbreviation.\n'\
-                'To pass multiple state inputs, please pass a List containing each individual '\
-                'state to this function and try again.'
+                f"The input '{states}' is not a valid state input. "\
+                "Please ensure your input is a valid two-letter state abbreviation."\
                 )
     elif type(states) == list:
-        for i, state_input in enumerate(states):
-            state_input = state_input.replace(' ', '')
-            if state_input.upper() not in state_set:
+        for state in states:
+            state = state.replace(' ', '')
+            if state.upper() not in lookup.states:
                 raise ValueError(
-                    f'The input \'{state_input}\' at index {i} of your list is not a valid input. '\
-                    'Please ensure all inputs are valid two-letter state abbreviations.'
+                    f"'{state}' is not a valid input. "\
+                    "Please ensure all inputs are valid two-letter state abbreviations."
                     )
     return
-
-### Testing functions ###
-
-if __name__ == '__main__':
-
-    # x1 = translate_races([Race.Asian,Race.Black,Race.Pacific_Islander])
-    # print(x1, type(x1))
-
-    # y1 = get_aggregations(2019, 'dc' , races=Race.UNAVAILABLE)
-    # print(y1)
-    # y2 = get_loans(2019, 'dc', [Action.INCOMPLETE, Action.PREAPPROVED], Race.PACIFIC_ISLANDER)
-    # print(y2)
-    # y3 = get_institutions(2020, ['dc', 'md', 'va'])
-    # print(y3)
-
-    f1a = translate_actions(Action.DENIED)
-    f1b = translate_actions([Action.DENIED, Action.INCOMPLETE, Action.ORIGINATED])
-    print(f1a, f1b, sep= ' | ')
-    f2a = translate_races(Race.ASIAN)
-    f2b = translate_races([Race.ASIAN, Race.BLACK, Race.JOINT])
-    print(f2a,f2b, sep= ' | ') 
-    f3a = translate_states(['dc', 'md', 'va']); print(f3a)
-    # f3b = translate_states('dc,md,va'); print(f3b)
-    f4 = translate_years(2018)
-    print(f4)
