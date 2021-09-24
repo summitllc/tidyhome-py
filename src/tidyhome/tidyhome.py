@@ -252,7 +252,7 @@ def translate_states(states: Union[str, List[str]]) -> str:
     elif isinstance(states, Iterable):
         states = list(states)
         check_abbreviation(states)
-        return ','.join(states)
+        return ','.join([state.replace(' ', '') for state in states])
     else:
         raise TypeError(f"The input '{states}' is not a valid input.")
 
