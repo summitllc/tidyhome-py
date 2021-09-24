@@ -2,4 +2,9 @@
 build
 dist
 venv
+venv_chuck
+requirements.txt
+__pycache__
+.vscode
+.mypy_cache
 *.egg-info
