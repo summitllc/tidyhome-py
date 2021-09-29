@@ -5,9 +5,9 @@ import inspect
 
 # Generate string for full path to directory where this file is running
 # and replace forward slash (/) with os-specific path separator
-thisdir = inspect.stack()[0][1].replace('/', os.sep)
+thisdir = os.path.dirname(__file__)
 
-old = "srctest" + os.sep + "append_src_tidyhome.py"
+old = "srctest"
 
 new = "src" + os.sep + "tidyhome"
 
