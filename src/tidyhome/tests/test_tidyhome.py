@@ -1,12 +1,11 @@
 """Unit testing module for tidyhome.py.
 
-Contains TestCases (from unittest module) for main and helper functions.
+Contains unique test cases for each main/helper function.
 """
-import append_src_tidyhome # necessary to successfully import tidyhome (via appending /src/tidyhome to sys.path)
 
 import unittest # https://docs.python.org/3/library/unittest.html
 import pandas as pd
-import tidyhome as th
+from .. import tidyhome as th
 
 ### Main Function TestCases ###
 class get_aggregations_TestCase(unittest.TestCase):
