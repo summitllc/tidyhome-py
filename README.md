@@ -1,5 +1,7 @@
 # tidyhome: a package for accessing CFPB U.S. home mortgage data
 
+[![PyPI Latest Release](https://img.shields.io/pypi/v/tidyhome)](https://pypi.org/project/tidyhome/)
+
 ## What is tidyhome?
 
 Tidyhome is a package that simplifies the process of retrieving Home Mortgage Disclosure Act (HMDA) data from the Consumer Financial Protection Bureau's (CFPB) [HMDA Platform API](https://cfpb.github.io/hmda-platform/#hmda-api-documentation).
